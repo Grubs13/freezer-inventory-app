@@ -1,4 +1,7 @@
 {
+  "enabledPlugins": {
+    "pstack@pstack-claude": true
+  },
   "extraKnownMarketplaces": {
     "pstack-claude": {
       "source": {
@@ -6,8 +9,5 @@
         "repo": "michael-denyer/pstack-claude"
       }
     }
-  },
-  "enabledPlugins": {
-    "pstack@pstack-claude": true
   }
 }
