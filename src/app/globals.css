@@ -1,0 +1,60 @@
+@import 'tailwindcss';
+
+@theme {
+  --color-bg: #f4f7fb;
+  --color-surface: #ffffff;
+  --color-ink: #0f1c2e;
+  --color-muted: #5b6b80;
+  --color-line: #dbe3ee;
+  --color-accent: #1f6feb;
+  --color-accent-ink: #ffffff;
+  --color-accent-soft: #e3eefe;
+  --color-danger: #c62828;
+  --color-ok: #1b7f4b;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --color-bg: #0b1320;
+    --color-surface: #131e2f;
+    --color-ink: #e8eef7;
+    --color-muted: #93a3b8;
+    --color-line: #24334a;
+    --color-accent: #5b9dff;
+    --color-accent-ink: #06101f;
+    --color-accent-soft: #1a2c48;
+    --color-danger: #ff7b7b;
+    --color-ok: #5fd39a;
+  }
+}
+
+body {
+  background: var(--color-bg);
+  color: var(--color-ink);
+  font-family: ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  -webkit-tap-highlight-color: transparent;
+}
+
+@layer components {
+  .field {
+    @apply w-full rounded-xl border border-line bg-surface px-3 py-2.5 text-base outline-none focus:border-accent;
+  }
+  .btn-primary {
+    @apply rounded-xl bg-accent px-4 py-3 font-semibold text-accent-ink disabled:opacity-50;
+  }
+  .btn {
+    @apply rounded-xl border border-line bg-surface px-4 py-2.5 font-medium disabled:opacity-50;
+  }
+  .btn-danger {
+    @apply rounded-xl border border-danger px-4 py-2.5 font-medium text-danger;
+  }
+  .card {
+    @apply rounded-2xl border border-line bg-surface;
+  }
+  .text-muted {
+    color: var(--color-muted);
+  }
+  .text-danger {
+    color: var(--color-danger);
+  }
+}
