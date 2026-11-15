@@ -14,7 +14,8 @@
     "db:test": "supabase test db",
     "e2e": "node --env-file=.env.local scripts/e2e.mjs",
     "icons": "node scripts/make-icons.mjs",
-    "tokens": "node scripts/tokens-to-css.mjs"
+    "tokens": "node scripts/tokens-to-css.mjs",
+    "seed:demo": "node --env-file=.env.local scripts/seed-demo.mjs"
   },
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
