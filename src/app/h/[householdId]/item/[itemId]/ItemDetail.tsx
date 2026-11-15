@@ -12,7 +12,7 @@ import { itemStatus, lotViews, stepLot } from '@/lib/views';
 type Movement = { id: number; delta: number; source: string; user_id: string; created_at: string };
 
 export function ItemDetail({ itemId }: { itemId: string }) {
-  const { household, freezers, freezer, setFreezerId, items, today, busy, change } = useHousehold();
+  const { household, freezers, freezer, setFreezerId, items, today, busy, change, setPackBestBy } = useHousehold();
   const supabase = useMemo(() => supabaseBrowser(), []);
   const item = items.find((i) => i.id === itemId);
   const [history, setHistory] = useState<{ rows: Movement[]; who: Map<string, string> } | null>(null);
@@ -76,12 +76,13 @@ export function ItemDetail({ itemId }: { itemId: string }) {
           <div className="stats">
             <StatCard compact label="On hand" value={formatNumber(have)} hint={unitWord(have, item.unit) || 'count'} />
             <StatCard compact label="Oldest" value={`${daysSince(oldestLot.frozenOn, today)}d`} hint={shortDate(oldestLot.frozenOn, today)} tone={itemStatus(item, today)} />
-            <StatCard compact label="Best by" value={shortDate(bestBy(item.category, oldestLot.frozenOn), today).replace(/, \d{4}$/, '')}
-              hint={`oldest pack, ${bestBy(item.category, oldestLot.frozenOn).slice(0, 4)}`} />
+            <StatCard compact label="Best by" value={shortDate(bestBy(item.category, oldestLot), today).replace(/, \d{4}$/, '')}
+              hint={`oldest pack, ${bestBy(item.category, oldestLot).slice(0, 4)}`} />
           </div>
           <div style={{ marginTop: 'var(--space-4)' }}>
             <LotList lots={lotViews(item, today)} unit={weighed ? item.unit : undefined} onAdd={addPack} disabled={busy}
-              onQtyChange={(l, n) => change(stepLot(item, item.lots.find((x) => x.id === l.id)!, n, today))} />
+              onQtyChange={(l, n) => change(stepLot(item, item.lots.find((x) => x.id === l.id)!, n, today))}
+              onBestBy={(l, date) => setPackBestBy(l.id, date, date ? shortDate(date, today) : '')} />
           </div>
         </>
       ) : (

@@ -233,7 +233,8 @@ function describe(d: Draft, items: InventoryItem[], today: string) {
     const label = categoryOf(d.category).label;
     return {
       title: `Add ${formatNumber(d.quantity)}${unitWord(d.quantity, d.unit) ? ` ${unitWord(d.quantity, d.unit)}` : ''} · ${d.name.trim() || 'New item'}`,
-      note: [existing ? `${label} · matched existing item` : `New item · ${label}`, d.frozenOn !== today ? addedLabel(d.frozenOn, today) : null].filter(Boolean).join(' · '),
+      note: [existing ? `${label} · matched existing item` : `New item · ${label}`, d.frozenOn !== today ? addedLabel(d.frozenOn, today) : null,
+        d.bestBy ? `Best by ${shortDate(d.bestBy, today)}` : null].filter(Boolean).join(' · '),
       after: have + d.quantity,
       warn: false,
     };
@@ -312,6 +313,10 @@ function EditDraft({ draft: d, items, today, onChange, onDone, onDrop }: {
               <input className="input" type="date" value={d.frozenOn} max={today} onChange={(e) => onChange({ frozenOn: e.target.value })} />
             </label>
           </div>
+          <label className="field"><span>Best by (optional)</span>
+            <input className="input" type="date" value={d.bestBy ?? ''} min={d.frozenOn} onChange={(e) => onChange({ bestBy: e.target.value || undefined })} />
+          </label>
+          <p className="t-caption muted">Leave empty to use about {categoryOf(d.category).months} months for {categoryOf(d.category).label.toLowerCase()}.</p>
         </>
       ) : (
         <>
@@ -344,7 +349,10 @@ function EditDraft({ draft: d, items, today, onChange, onDone, onDrop }: {
 
 function problemWith(d: Draft, items: InventoryItem[]): string | null {
   if (!(d.quantity > 0)) return 'Amount must be more than zero.';
-  if (d.kind === 'add') return d.name.trim() ? null : 'Give it a name.';
+  if (d.kind === 'add') {
+    if (!d.name.trim()) return 'Give it a name.';
+    return d.bestBy && d.bestBy < d.frozenOn ? 'Best-by can’t be before the day it went in.' : null;
+  }
   const item = items.find((i) => i.id === d.itemId);
   if (!item) return 'Tap to pick which item came out.';
   const have = d.lotId ? item.lots.find((l) => l.id === d.lotId)?.quantity ?? 0 : total(item);

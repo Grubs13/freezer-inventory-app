@@ -7,7 +7,7 @@ A shared inventory for a deep freeze. Use it from any phone or computer, and add
 - Say or type "add two packs of ground turkey and 1.5 pounds of venison" or "took out a frozen pizza". The app shows what it understood, and you confirm before anything changes.
 - Browse by category (meat, poultry, seafood, frozen meals, vegetables, fruit, bread and baked goods, desserts, other).
 - Each pack keeps the date it went in, and adding twice on one day goes into that day's pack. Taking food out uses the oldest pack first, unless you name one ("the chicken from October") or use that pack's own stepper.
-- Every item shows Fresh, Use soon or Past best, worked out from its category's typical freezer life.
+- Every item shows Fresh, Use soon or Past best, worked out from its category's typical freezer life. You can set a pack's own best-by date instead, for example from the package.
 - Every save shows an Undo button for 5 seconds. Undo puts food back into the packs it came from.
 
 ## Stack
@@ -58,6 +58,17 @@ Sign-up is invite only, so create the first user yourself:
 
 1. Run `node --env-file=.env.local scripts/invite.mjs you@example.com`.
 2. Open the mail catcher at http://127.0.0.1:54324 and click the invite link.
+
+### Try it on your phone over Wi-Fi
+
+This is for a quick look only. To use the app properly, deploy it (see below).
+
+1. Find your computer's local IP address, for example `192.168.1.20`.
+2. In `.env.local`, set `NEXT_PUBLIC_SUPABASE_URL=http://192.168.1.20:54321`.
+3. Run `npm run dev -- -H 0.0.0.0`.
+4. On a phone on the same Wi-Fi, open `http://192.168.1.20:3000`.
+
+Sign-in codes go to the local mail catcher at http://127.0.0.1:54324 on the computer, not to a real inbox. Browsers only allow the in-app microphone on HTTPS pages, so the mic button doesn't work this way. The keyboard's microphone still does.
 
 ### Tests
 

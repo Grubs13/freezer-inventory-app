@@ -172,6 +172,23 @@ try {
   await me.getByText('Removed 1 pack').first().waitFor();
   console.log('ok  item detail lists packs oldest first, steps one pack, and shows history');
 
+  const firstLot = me.getByTestId('lot').first();
+  await firstLot.getByRole('button', { name: /Change best-by date/ }).click();
+  await firstLot.getByLabel('Best-by date', { exact: true }).fill('2026-11-01');
+  await firstLot.getByRole('button', { name: 'Save best-by' }).click();
+  await firstLot.getByText('Best by Nov 1 (set by you)').waitFor();
+  await firstLot.getByText('Past best').waitFor();
+  await shot(me, '3b-best-by');
+  await me.goto(home);
+  assert.equal(await me.locator('.fb-stat', { hasText: 'Past best' }).locator('.fb-stat__value').textContent(), '1');
+  await me.getByRole('heading', { name: 'Eat next' }).waitFor();
+  assert.equal(await me.getByTestId('item-row').first().getByText('Ground turkey').count(), 1, 'past-best item leads Eat next');
+  await me.getByRole('link', { name: 'Open Ground turkey' }).first().click();
+  await me.getByTestId('lot').first().getByRole('button', { name: /Change best-by date/ }).click();
+  await me.getByRole('button', { name: 'Use the default' }).click();
+  await me.getByTestId('lot').first().getByText('Best by Jul 2', { exact: true }).waitFor();
+  console.log('ok  a pack\'s best-by can be set by hand, moves it to Eat next, and can go back to the default');
+
   await me.goto(home);
   await say(me, 'how much ground turkey do we have');
   assert.match(await sheet(me).textContent(), /Ground turkey.*2 packs/);

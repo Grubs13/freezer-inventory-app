@@ -7,7 +7,7 @@ import { TabBar, Toast, type Tab } from '@/components/frostbox/inventory';
 import { Icon, Mark } from '@/components/frostbox/ui';
 import { VoiceSheet, type VoiceMode } from '@/components/frostbox/VoiceSheet';
 import { localToday, type Draft, type InventoryItem, type Source } from '@/lib/domain';
-import { apply, loadInventory, toActions, type Action } from '@/lib/inventory';
+import { apply, loadInventory, setBestBy, toActions, type Action } from '@/lib/inventory';
 import { supabaseBrowser } from '@/lib/supabase/client';
 import type { Change } from '@/lib/views';
 
@@ -23,6 +23,7 @@ type Household = {
   today: string;
   busy: boolean;
   change: (c: Change, source?: Source) => Promise<void>;
+  setPackBestBy: (lotId: string, date: string | null, label: string) => Promise<string | null>;
   openVoice: (mode: VoiceMode) => void;
 };
 
@@ -108,6 +109,15 @@ export function HouseholdShell({ household, freezers, initialItems, children }: 
     else show({ text: c.text, detail: c.detail, undo: result.undo, freezerId });
   }, [run, show, freezerId]);
 
+  const setPackBestBy = useCallback(async (lotId: string, date: string | null, label: string) => {
+    setBusy(true);
+    const failure = await setBestBy(supabase, lotId, date);
+    if (!failure) await refresh();
+    setBusy(false);
+    if (!failure) show({ text: date ? `Best-by set to ${label}` : 'Best-by back to the default', freezerId });
+    return failure;
+  }, [supabase, refresh, show, freezerId]);
+
   async function undo(t: ToastState) {
     const result = await run(t.freezerId, t.undo!, 'manual');
     show(result.error !== null ? { text: 'Couldn’t undo that', detail: result.error, error: true, freezerId: t.freezerId } : { text: 'Undone', freezerId: t.freezerId });
@@ -133,7 +143,7 @@ export function HouseholdShell({ household, freezers, initialItems, children }: 
   const active = pathname.startsWith(`${base}/activity`) ? 'activity' : pathname.startsWith(`${base}/settings`) ? 'settings' : 'inventory';
 
   const value: Household | null = today
-    ? { household, freezers, freezer, setFreezerId, items, inFreezer, today, busy, change, openVoice: setVoice }
+    ? { household, freezers, freezer, setFreezerId, items, inFreezer, today, busy, change, setPackBestBy, openVoice: setVoice }
     : null;
 
   return (

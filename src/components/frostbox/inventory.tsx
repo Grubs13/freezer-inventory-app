@@ -6,7 +6,10 @@ import { Badge, Button, cx, Icon, QuantityStepper, VoiceButton, type IconName, t
 import { initials, type Freshness, type Source } from '@/lib/domain';
 
 /** One pack as the components show it. Dates arrive already formatted. */
-export type LotView = { id: string; date: string; qty: number; unit?: string; added: string; bestBy?: string; status: Freshness; note?: string; source?: Source };
+export type LotView = {
+  id: string; date: string; qty: number; unit?: string; added: string; status: Freshness; note?: string; source?: Source;
+  bestBy?: string; bestByDate?: string; bestBySet?: boolean;
+};
 
 type ItemRowProps = {
   name: string;
@@ -63,15 +66,18 @@ function dateParts(iso: string): [string, string] {
   return [d.toLocaleDateString('en-US', { month: 'short' }).toUpperCase(), String(d.getDate())];
 }
 
-export function LotList({ lots, unit, title = 'Packs', onAdd, onQtyChange, disabled }: {
+export function LotList({ lots, unit, title = 'Packs', onAdd, onQtyChange, onBestBy, disabled }: {
   lots: LotView[];
   unit?: string;
   title?: string | false;
   onAdd?: () => void;
   onQtyChange?: (lot: LotView, n: number) => void;
+  /** Save a best-by date for one pack, or null to go back to the default. Resolves to an error message or null. */
+  onBestBy?: (lot: LotView, date: string | null) => Promise<string | null>;
   disabled?: boolean;
 }) {
   const sum = lots.reduce((n, l) => n + l.qty, 0);
+  const [editing, setEditing] = useState<string | null>(null);
   return (
     <div className="fb-lots">
       {title !== false && (
@@ -96,8 +102,14 @@ export function LotList({ lots, unit, title = 'Packs', onAdd, onQtyChange, disab
                 <div className="fb-lot__title">{l.added}{i === 0 && lots.length > 1 && <Badge tone="frost">Use first</Badge>}</div>
                 <div className="fb-lot__meta">
                   <Badge tone={l.status} dot />
-                  {l.bestBy && <span>Best by {l.bestBy}</span>}
+                  {l.bestBy && !onBestBy && <span>Best by {l.bestBy}{l.bestBySet ? ' (set by you)' : ''}</span>}
                 </div>
+                {l.bestBy && onBestBy && (
+                  <button type="button" className="fb-lot__bestby" aria-expanded={editing === l.id}
+                    aria-label={`Best by ${l.bestBy}${l.bestBySet ? ', set by you' : ''}. Change best-by date`} onClick={() => setEditing(editing === l.id ? null : l.id)}>
+                    <Icon name="clock" size={12} />Best by {l.bestBy}{l.bestBySet ? ' (set by you)' : ''}
+                  </button>
+                )}
                 {(l.note || l.source === 'voice') && (
                   <div className="fb-lot__note">
                     <Icon name={l.source === 'voice' ? 'mic' : 'note'} size={12} />
@@ -107,11 +119,39 @@ export function LotList({ lots, unit, title = 'Packs', onAdd, onQtyChange, disab
               </div>
               <QuantityStepper size="sm" value={l.qty} unit={l.unit} onChange={(n) => onQtyChange?.(l, n)}
                 label={`Quantity in pack ${l.added.toLowerCase()}`} trashAtOne disabled={disabled || !onQtyChange} />
+              {editing === l.id && onBestBy && <BestByEditor lot={l} onSave={onBestBy} onClose={() => setEditing(null)} />}
             </li>
           );
         })}
       </ul>
     </div>
+  );
+}
+
+function BestByEditor({ lot, onSave, onClose }: { lot: LotView; onSave: (lot: LotView, date: string | null) => Promise<string | null>; onClose: () => void }) {
+  const [date, setDate] = useState(lot.bestByDate ?? lot.date);
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  async function save(value: string | null) {
+    setBusy(true);
+    const failure = await onSave(lot, value);
+    setBusy(false);
+    if (failure) setError(failure);
+    else onClose();
+  }
+  return (
+    <form className="fb-lot__edit" onSubmit={(e) => { e.preventDefault(); void save(date); }}>
+      <label className="field"><span>Best-by date</span>
+        <input className="input" type="date" required min={lot.date} value={date} onChange={(e) => setDate(e.target.value)} autoFocus />
+      </label>
+      <p className="t-caption muted">Use the date on the package, or your own. It decides when this pack shows as Use soon or Past best.</p>
+      {error && <p className="t-caption" role="alert" style={{ color: 'var(--expired)' }}>{error}</p>}
+      <div className="row" style={{ flexWrap: 'wrap' }}>
+        <Button type="submit" variant="primary" size="sm" disabled={busy || !date}>Save best-by</Button>
+        {lot.bestBySet && <Button size="sm" disabled={busy} onClick={() => void save(null)}>Use the default</Button>}
+        <Button variant="ghost" size="sm" onClick={onClose}>Cancel</Button>
+      </div>
+    </form>
   );
 }
 
@@ -179,7 +219,7 @@ export function InventoryTable({ rows, onQtyChange, onLotQtyChange, disabled }: 
                         {l.source === 'voice' && <span className="fb-table__lotnote">Added by voice</span>}
                       </div>
                     </td>
-                    <td className="is-muted">{l.bestBy ? `Best by ${l.bestBy}` : ''}</td>
+                    <td className="is-muted">{l.bestBy ? `Best by ${l.bestBy}${l.bestBySet ? ' (set by you)' : ''}` : ''}</td>
                     <td className="is-muted">{l.added.replace(/^Added /, '')}</td>
                     <td><Badge tone={l.status} dot /></td>
                     <td className="is-num">

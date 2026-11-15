@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(34);
+select plan(38);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-00000000000a', 'owner@test.dev'),
@@ -78,6 +78,15 @@ select throws_ok($$
 $$, 'P0001', 'Only 2.00 left of that item', 'cannot remove more than is in the freezer');
 select is((select count(*)::int from public.movements), 9, 'each add, remove and undo is logged');
 
+update public.lots set best_by = '2026-12-01' where frozen_on = '2026-03-01';
+select is((select best_by from public.lots where frozen_on = '2026-03-01'), '2026-12-01'::date, 'member can set a pack''s best-by date');
+select throws_ok($$ update public.lots set best_by = '2025-01-01' where frozen_on = '2026-03-01' $$,
+  '23514', null, 'best-by cannot come before the date the pack went in');
+select lives_ok($$
+  select public.apply_actions((select id from ctx where key = 'home_freezer'),
+    '[{"kind":"add","name":"Ground turkey","category":"poultry","unit":"pack","quantity":1,"frozen_on":"2026-03-01"}]')
+$$, 'adding to a pack without a best-by');
+select is((select best_by from public.lots where frozen_on = '2026-03-01'), '2026-12-01'::date, 'adding to the same day keeps the pack''s best-by');
 select throws_ok($$ insert into public.freezers (household_id, name) select id, 'Garage' from ctx where key = 'home' $$,
   '42501', null, 'members cannot add freezers');
 select throws_ok($$ insert into public.invites (household_id, email) select id, 'x@test.dev' from ctx where key = 'home' $$,

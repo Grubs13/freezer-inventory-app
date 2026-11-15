@@ -31,7 +31,7 @@ export type Freshness = 'fresh' | 'soon' | 'expired';
 export type Source = 'voice' | 'manual' | 'photo';
 
 /** One pack: what went into the freezer on one day. */
-export type Lot = { id: string; quantity: number; frozenOn: string; source: Source };
+export type Lot = { id: string; quantity: number; frozenOn: string; source: Source; /** Set by a person; null means use the category default. */ bestBy: string | null };
 
 export type InventoryItem = {
   id: string;
@@ -50,6 +50,8 @@ export type AddDraft = {
   unit: Unit;
   category: Category;
   frozenOn: string;
+  /** Optional best-by set by hand. */
+  bestBy?: string;
 };
 
 export type RemoveDraft = {
@@ -89,17 +91,25 @@ export function localToday(now = new Date()): string {
   return iso(now);
 }
 
-export function bestBy(category: Category, frozenOn: string): string {
+export function defaultBestBy(category: Category, frozenOn: string): string {
   const d = parse(frozenOn);
   d.setMonth(d.getMonth() + categoryOf(category).months);
   return iso(d);
 }
 
-export function freshness(category: Category, frozenOn: string, today: string): Freshness {
+/** The pack's own best-by when someone set one, otherwise the category's typical freezer life. */
+export function bestBy(category: Category, lot: Pick<Lot, 'frozenOn' | 'bestBy'>): string {
+  return lot.bestBy ?? defaultBestBy(category, lot.frozenOn);
+}
+
+/** Fresh until 75% of the time between going in and best-by has passed, then Use soon, then Past best. */
+export function freshness(frozenOn: string, best: string, today: string): Freshness {
   const start = parse(frozenOn).getTime();
-  const life = parse(bestBy(category, frozenOn)).getTime() - start;
-  const used = (parse(today).getTime() - start) / life;
-  return used > 1 ? 'expired' : used >= 0.75 ? 'soon' : 'fresh';
+  const end = parse(best).getTime();
+  const now = parse(today).getTime();
+  if (now > end) return 'expired';
+  if (end <= start) return 'soon';
+  return (now - start) / (end - start) >= 0.75 ? 'soon' : 'fresh';
 }
 
 export function daysSince(frozenOn: string, today: string): number {

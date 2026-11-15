@@ -11,7 +11,7 @@ const monthDay = (iso: string) => new Date(`${iso}T12:00:00`).toLocaleDateString
 export const stepperUnit = (item: InventoryItem, qty: number) => (item.unit === 'pack' ? undefined : unitWord(qty, item.unit) || undefined);
 
 export function lotStatus(item: InventoryItem, lot: Lot, today: string): Freshness {
-  return freshness(item.category, lot.frozenOn, today);
+  return freshness(lot.frozenOn, bestBy(item.category, lot), today);
 }
 
 /** An item's freshness is its oldest pack's, because that one is eaten next. */
@@ -26,7 +26,9 @@ export function lotViews(item: InventoryItem, today: string, withYear = false): 
     unit: stepperUnit(item, l.quantity),
     date: l.frozenOn,
     added: withYear ? `Added ${shortDate(l.frozenOn, today, true)}` : addedLabel(l.frozenOn, today),
-    bestBy: withYear ? shortDate(bestBy(item.category, l.frozenOn), today, true) : monthDay(bestBy(item.category, l.frozenOn)),
+    bestBy: withYear ? shortDate(bestBy(item.category, l), today, true) : monthDay(bestBy(item.category, l)),
+    bestByDate: bestBy(item.category, l),
+    bestBySet: l.bestBy !== null,
     status: lotStatus(item, l, today),
     source: l.source,
   }));

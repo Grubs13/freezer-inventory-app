@@ -149,6 +149,10 @@ details > summary::-webkit-details-marker { display: none; }
 
 /* Item detail */
 .detailhead { display: flex; gap: var(--space-3); align-items: center; padding: var(--space-2) 0 var(--space-4); }
+.fb-lot { flex-wrap: wrap; }
+.fb-lot__bestby { justify-self: start; display: inline-flex; align-items: center; gap: 4px; min-height: 24px; padding: 0; border: 0; background: none; color: var(--frost); font-size: 12px; line-height: 16px; cursor: pointer; text-decoration: underline; text-decoration-color: color-mix(in srgb, var(--frost) 35%, transparent); text-underline-offset: 2px; text-align: left; max-width: 100%; }
+.fb-lot__bestby:focus-visible { outline: 2px solid var(--focus-ring); outline-offset: 2px; }
+.fb-lot__edit { flex-basis: 100%; display: grid; gap: var(--space-2); padding: var(--space-3); border-radius: var(--radius-md); background: var(--surface-sunken); }
 .detailhead .fb-item__tile { width: 48px; height: 48px; font-size: 15px; }
 .fb-history .fb-history__op { flex: none; }
 

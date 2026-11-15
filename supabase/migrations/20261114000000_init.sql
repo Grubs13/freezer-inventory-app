@@ -66,6 +66,8 @@ create table public.lots (
   item_id uuid not null,
   quantity numeric(10, 2) not null check (quantity > 0),
   frozen_on date not null,
+  -- Set by a person to replace the best-by date worked out from the category.
+  best_by date check (best_by is null or best_by >= frozen_on),
   source text not null default 'manual' check (source in ('voice', 'manual', 'photo')),
   created_at timestamptz not null default now(),
   unique (item_id, frozen_on),
@@ -198,7 +200,7 @@ $$;
 
 -- Runs as the caller, so every row it touches still passes the policies above.
 -- Actions:
---   {"kind":"add", "name","category","unit" | "item_id", "quantity", "frozen_on"?, "lot_id"?}
+--   {"kind":"add", "name","category","unit" | "item_id", "quantity", "frozen_on"?, "best_by"?, "lot_id"?}
 --   {"kind":"remove", "item_id", "quantity", "lot_id"?}
 -- An add goes into that day's pack; a remove without lot_id takes from the oldest pack first.
 -- Returns the actions that undo this call, newest first.
@@ -259,9 +261,10 @@ begin
           raise exception 'That pack is no longer in the freezer';
         end if;
       else
-        insert into public.lots (household_id, item_id, quantity, frozen_on, source)
-        values (v_household, v_item, v_qty, coalesce((v_action ->> 'frozen_on')::date, current_date), p_source)
-        on conflict (item_id, frozen_on) do update set quantity = public.lots.quantity + excluded.quantity
+        insert into public.lots (household_id, item_id, quantity, frozen_on, best_by, source)
+        values (v_household, v_item, v_qty, coalesce((v_action ->> 'frozen_on')::date, current_date), (v_action ->> 'best_by')::date, p_source)
+        on conflict (item_id, frozen_on) do update
+          set quantity = public.lots.quantity + excluded.quantity, best_by = coalesce(excluded.best_by, public.lots.best_by)
         returning id into v_lot_id;
       end if;
 
@@ -335,7 +338,7 @@ grant update (name) on public.households to authenticated;
 grant update (role) on public.memberships to authenticated;
 grant update (name) on public.freezers to authenticated;
 grant update (name, category, unit) on public.items to authenticated;
-grant update (quantity, frozen_on) on public.lots to authenticated;
+grant update (quantity, frozen_on, best_by) on public.lots to authenticated;
 revoke all on public.movements from anon;
 revoke update, delete, truncate on public.movements from authenticated;
 

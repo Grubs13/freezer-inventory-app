@@ -5,7 +5,7 @@ import { guessCategory, parseCommand } from './parse';
 const today = '2026-11-14';
 const item = (id: string, name: string, quantity: number, extra: Partial<InventoryItem> = {}): InventoryItem => ({
   id, freezerId: 'f1', name, category: 'other', unit: 'pack',
-  lots: quantity > 0 ? [{ id: `${id}-1`, quantity, frozenOn: '2026-10-01', source: 'manual' }] : [],
+  lots: quantity > 0 ? [{ id: `${id}-1`, quantity, frozenOn: '2026-10-01', bestBy: null, source: 'manual' }] : [],
   ...extra,
 });
 const stock: InventoryItem[] = [
@@ -14,8 +14,8 @@ const stock: InventoryItem[] = [
   item('thighs', 'Chicken thighs', 2, {
     category: 'poultry',
     lots: [
-      { id: 'thighs-oct', quantity: 1, frozenOn: '2026-10-02', source: 'manual' },
-      { id: 'thighs-nov', quantity: 1, frozenOn: '2026-11-08', source: 'voice' },
+      { id: 'thighs-oct', quantity: 1, frozenOn: '2026-10-02', bestBy: null, source: 'manual' },
+      { id: 'thighs-nov', quantity: 1, frozenOn: '2026-11-08', bestBy: null, source: 'voice' },
     ],
   }),
   item('breasts', 'Chicken breasts', 4, { category: 'poultry' }),
