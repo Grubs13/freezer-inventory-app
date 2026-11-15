@@ -1,6 +1,7 @@
 'use server';
 
 import { revalidatePath } from 'next/cache';
+import { headers } from 'next/headers';
 import { redirect } from 'next/navigation';
 import { requireUser, supabaseAdmin } from '@/lib/supabase/server';
 
@@ -60,7 +61,9 @@ export async function inviteMember(form: FormData) {
   const { error } = await supabase.from('invites').insert({ household_id: id, email, role });
   if (error) back(id, { error: error.code === '23505' ? 'That email is already invited.' : error.message });
 
-  const { error: mailError } = await supabaseAdmin().auth.admin.inviteUserByEmail(email);
+  const h = await headers();
+  const origin = `${h.get('x-forwarded-proto') ?? 'https'}://${h.get('x-forwarded-host') ?? h.get('host')}`;
+  const { error: mailError } = await supabaseAdmin().auth.admin.inviteUserByEmail(email, { redirectTo: `${origin}/login` });
   if (mailError && mailError.code !== 'email_exists') {
     back(id, { error: `Invite saved, but the email failed to send: ${mailError.message}` });
   }

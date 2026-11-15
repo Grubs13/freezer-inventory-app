@@ -63,11 +63,11 @@ async function signIn(browser, email, options) {
   await page.waitForURL(/\/login/);
   const since = Date.now() - 1000;
   await page.getByLabel('Email').fill(email);
-  await page.getByRole('button', { name: 'Email me a code' }).click();
+  await page.getByRole('button', { name: 'Send sign-in email' }).click();
   const mail = await latestMail(email, since, /sign-in code/);
   const code = mail.HTML.match(/<strong>(\d{6})<\/strong>/)[1];
-  await page.getByLabel(/Code sent to/).fill(code);
-  await page.getByRole('button', { name: 'Sign in' }).click();
+  await page.getByLabel('Code from the email').fill(code);
+  await page.getByRole('button', { name: 'Sign in with code' }).click();
   await page.waitForURL((u) => !u.pathname.startsWith('/login'));
   return page;
 }
@@ -99,7 +99,7 @@ try {
   const blocked = await phone(browser);
   await blocked.goto(`${APP}/login`);
   await blocked.getByLabel('Email').fill(`nobody-${run}@test.dev`);
-  await blocked.getByRole('button', { name: 'Email me a code' }).click();
+  await blocked.getByRole('button', { name: 'Send sign-in email' }).click();
   await blocked.getByText('No account for this email yet').waitFor();
   await shot(blocked, '0-sign-in');
   console.log('ok  uninvited emails cannot sign in');
@@ -238,6 +238,14 @@ try {
   await me.getByText(/by voice/).first().waitFor();
   await shot(me, '5-activity');
   console.log('ok  activity log shows who changed what, and what was spoken');
+
+  const linkUser = `link-${run}@test.dev`;
+  const generated = await admin.auth.admin.generateLink({ type: 'invite', email: linkUser, options: { redirectTo: `${APP}/login` } });
+  assert.equal(generated.error, null, 'admin can make a default-template invite link');
+  const viaLink = await phone(browser);
+  await viaLink.goto(generated.data.properties.action_link);
+  await viaLink.getByLabel('Household name').waitFor();
+  console.log('ok  the link in Supabase\'s default invite email signs the person in');
 
   const desk = await signIn(browser, owner, { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 860 }, isMobile: false, hasTouch: false });
   await desk.waitForURL(home);
