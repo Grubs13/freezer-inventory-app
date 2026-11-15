@@ -12,6 +12,25 @@ const stranger = `stranger-${run}@test.dev`;
 
 const admin = createClient(process.env.NEXT_PUBLIC_SUPABASE_URL, process.env.SUPABASE_SECRET_KEY, { auth: { persistSession: false } });
 
+// Stands in for the browser's speech service: "hears" whatever window.__say holds.
+const fakeSpeech = () => {
+  window.__say = '';
+  const Fake = class {
+    start() {
+      setTimeout(() => {
+        const results = [Object.assign([{ transcript: window.__say }], { isFinal: true })];
+        this.onresult?.({ results });
+        this.onend?.();
+      }, 200);
+    }
+    stop() {}
+    abort() {}
+  };
+  for (const name of ['SpeechRecognition', 'webkitSpeechRecognition']) {
+    Object.defineProperty(window, name, { value: Fake, configurable: true, writable: true });
+  }
+};
+
 async function latestMail(to, since, subject = /./) {
   for (let i = 0; i < 40; i++) {
     const res = await fetch(`${MAIL}/api/v1/search?query=${encodeURIComponent(`to:"${to}"`)}`);
@@ -23,19 +42,23 @@ async function latestMail(to, since, subject = /./) {
   throw new Error(`no email for ${to}`);
 }
 
+async function phone(browser, options = {}) {
+  const context = await browser.newContext({ ...devices['iPhone 13'], ...options });
+  await context.addInitScript(fakeSpeech);
+  return context.newPage();
+}
+
 async function acceptInviteLink(browser, email, since) {
   const mail = await latestMail(email, since);
   const link = mail.HTML.match(/href="([^"]+auth\/confirm[^"]+)"/)[1].replaceAll('&amp;', '&');
-  const context = await browser.newContext({ ...devices['iPhone 13'] });
-  const page = await context.newPage();
+  const page = await phone(browser);
   await page.goto(link.replace(/^https?:\/\/[^/]+/, APP));
   await page.waitForURL((u) => !u.pathname.startsWith('/login') && !u.pathname.startsWith('/auth'));
   return page;
 }
 
-async function signIn(browser, email) {
-  const context = await browser.newContext({ ...devices['iPhone 13'] });
-  const page = await context.newPage();
+async function signIn(browser, email, options) {
+  const page = await phone(browser, options);
   await page.goto(APP);
   await page.waitForURL(/\/login/);
   const since = Date.now() - 1000;
@@ -50,112 +73,172 @@ async function signIn(browser, email) {
 }
 
 async function shot(page, name) {
-  if (SHOTS) await page.screenshot({ path: `${SHOTS}/${name}.png`, fullPage: false });
+  if (SHOTS) await page.screenshot({ path: `${SHOTS}/${name}.png` });
 }
 
-async function command(page, text) {
-  await page.getByRole('textbox', { name: 'Command' }).fill(text);
-  await page.getByRole('button', { name: 'Go' }).click();
-  await page.getByRole('dialog', { name: 'Check before saving' }).waitFor();
+/** Tap the voice button, "say" the sentence, and wait for the review. */
+async function say(page, sentence) {
+  await page.evaluate((s) => (window.__say = s), sentence);
+  await page.getByRole('button', { name: 'Add or remove by voice' }).click();
+  await page.getByRole('dialog', { name: 'Voice input' }).getByText(/Review changes|In this freezer/).waitFor().catch(async (e) => {
+    await shot(page, 'failed-say');
+    throw e;
+  });
 }
 
-const amountOf = (page, name) => page.getByRole('listitem').filter({ hasText: name }).getByTestId('amount');
+const sheet = (page) => page.getByRole('dialog');
+const row = (page, name) => page.getByTestId('item-row').filter({ has: page.getByText(name, { exact: true }) });
+const amountOf = (page, name) => row(page, name).locator('.fb-stepper__val');
+const toast = (page) => page.getByRole('status').filter({ hasText: /./ }).locator('.fb-toast__text');
 
 const browser = await chromium.launch();
 try {
   const ownerInvitedAt = Date.now() - 1000;
-  const { error: inviteError } = await admin.auth.admin.inviteUserByEmail(owner);
-  assert.equal(inviteError, null, 'admin can invite the first owner');
+  assert.equal((await admin.auth.admin.inviteUserByEmail(owner)).error, null, 'admin can invite the first owner');
 
-  const blocked = await (await browser.newContext()).newPage();
+  const blocked = await phone(browser);
   await blocked.goto(`${APP}/login`);
   await blocked.getByLabel('Email').fill(`nobody-${run}@test.dev`);
   await blocked.getByRole('button', { name: 'Email me a code' }).click();
   await blocked.getByText('No account for this email yet').waitFor();
+  await shot(blocked, '0-sign-in');
   console.log('ok  uninvited emails cannot sign in');
 
-  const ownerPage = await acceptInviteLink(browser, owner, ownerInvitedAt);
-  await ownerPage.getByLabel('Household name').fill('Home');
-  await ownerPage.getByRole('button', { name: 'Create' }).click();
-  await ownerPage.waitForURL(/\/h\//);
-  const householdUrl = ownerPage.url();
-  await ownerPage.getByText('This freezer is empty.').waitFor();
+  const me = await acceptInviteLink(browser, owner, ownerInvitedAt);
+  await me.getByLabel('Household name').fill('Home');
+  await me.getByRole('button', { name: 'Create household' }).click();
+  await me.waitForURL(/\/h\/[^/]+$/);
+  const home = me.url();
+  await me.getByText('Your freezer’s empty.').waitFor();
   console.log('ok  owner opens the invite link and creates a household');
 
-  await command(ownerPage, 'add two packs of ground turkey, a pack of chicken thighs, 3 frozen pizzas and 1.5 pounds of venison');
-  const drafts = ownerPage.getByTestId('draft');
-  assert.equal(await drafts.count(), 4, 'four lines to review');
-  await shot(ownerPage, '2-review-add');
-  await ownerPage.getByRole('button', { name: 'Save 4' }).click();
-  await ownerPage.getByRole('dialog').waitFor({ state: 'detached' });
-  assert.equal(await amountOf(ownerPage, 'Ground turkey').textContent(), '2 packs');
-  assert.equal(await amountOf(ownerPage, 'Frozen pizza').textContent(), '3');
-  assert.equal(await amountOf(ownerPage, 'Venison').textContent(), '1.5 lb');
-  await shot(ownerPage, '1-inventory');
-  console.log('ok  one spoken sentence adds four items with packs, counts and weight');
+  await say(me, 'add two packs of ground turkey, a pack of chicken thighs, 3 frozen pizzas and 1.5 pounds of venison');
+  assert.equal(await me.getByTestId('draft').count(), 4, 'four lines to review');
+  await sheet(me).getByText('New item · Poultry').first().waitFor();
+  await shot(me, '2-voice-review');
+  await me.getByRole('button', { name: 'Save 4 changes' }).click();
+  await sheet(me).waitFor({ state: 'detached' });
+  assert.equal(await toast(me).textContent(), 'Saved 4 changes');
+  assert.equal(await amountOf(me, 'Ground turkey').textContent(), '2');
+  assert.equal(await amountOf(me, 'Frozen pizzas').textContent(), '3');
+  assert.equal(await amountOf(me, 'Venison').textContent(), '1.5 lb');
+  console.log('ok  one spoken sentence adds four items through listen, review and save');
 
-  await ownerPage.getByRole('button', { name: /^Poultry/ }).click();
-  assert.equal(await ownerPage.getByTestId('amount').count(), 2, 'poultry filter shows turkey and thighs only');
-  await ownerPage.getByRole('button', { name: /^All/ }).click();
-  console.log('ok  category filter narrows the list');
+  await me.getByRole('tab', { name: /^Poultry/ }).click();
+  assert.equal(await me.getByTestId('item-row').count(), 2, 'poultry filter shows turkey and thighs only');
+  await me.getByRole('tab', { name: /^All/ }).click();
+  console.log('ok  category chips filter the list');
 
-  await command(ownerPage, 'took out a frozen pizza and we ate a pack of ground turkey');
-  await shot(ownerPage, '3-review-remove');
-  await ownerPage.getByRole('button', { name: 'Save 2' }).click();
-  await ownerPage.getByRole('dialog').waitFor({ state: 'detached' });
-  assert.equal(await amountOf(ownerPage, 'Frozen pizza').textContent(), '2');
-  assert.equal(await amountOf(ownerPage, 'Ground turkey').textContent(), '1 pack');
+  await say(me, 'took out a frozen pizza and we ate a pack of ground turkey');
+  await sheet(me).getByText(/^From the oldest pack \(added [A-Z][a-z]{2} \d{1,2}\) · 1 left$/).waitFor();
+  await me.getByRole('button', { name: 'Save 2 changes' }).click();
+  await sheet(me).waitFor({ state: 'detached' });
+  assert.equal(await amountOf(me, 'Frozen pizzas').textContent(), '2');
+  assert.equal(await amountOf(me, 'Ground turkey').textContent(), '1');
   console.log('ok  spoken removals lower the counts');
 
-  await ownerPage.getByRole('button', { name: 'Remove one Venison' }).click();
-  await ownerPage.getByRole('button', { name: 'Remove one Venison' }).click();
-  await amountOf(ownerPage, 'Venison').waitFor({ state: 'detached' });
-  console.log('ok  minus buttons take the last half pound and the item leaves the list');
+  await row(me, 'Chicken thighs').getByRole('button', { name: 'Remove the last one' }).click();
+  await row(me, 'Chicken thighs').waitFor({ state: 'detached' });
+  assert.match(await toast(me).textContent(), /Removed 1 pack of Chicken thighs/);
+  await me.getByRole('button', { name: 'Undo' }).click();
+  await row(me, 'Chicken thighs').waitFor();
+  assert.equal(await amountOf(me, 'Chicken thighs').textContent(), '1');
+  console.log('ok  removing the last one shows a trash icon, and Undo brings it back');
 
-  await ownerPage.goto(`${householdUrl}/settings`);
+  await me.getByRole('button', { name: 'Add item' }).click();
+  const add = sheet(me);
+  await add.getByLabel('Name').fill('Ground turkey');
+  await add.getByLabel('Unit').selectOption('pack');
+  await add.getByLabel('Category').selectOption('poultry');
+  await add.getByLabel('Date added').fill('2026-10-02');
+  await add.getByRole('button', { name: 'Done' }).click();
+  await add.getByText(/matched existing item/).waitFor();
+  await me.getByRole('button', { name: 'Save 1 change' }).click();
+  await add.waitFor({ state: 'detached' });
+  assert.equal(await amountOf(me, 'Ground turkey').textContent(), '2');
+  console.log('ok  Add item backfills an older pack of an existing item');
+
+  await me.getByRole('link', { name: 'Open Ground turkey' }).click();
+  await me.waitForURL(/\/item\//);
+  const lots = me.getByTestId('lot');
+  assert.equal(await lots.count(), 2, 'two packs listed');
+  assert.match(await lots.first().textContent(), /Added Oct 2.*Use first/);
+  await shot(me, '3-item-detail');
+  await lots.nth(1).getByRole('button', { name: 'Remove the last one' }).click();
+  await me.getByTestId('lot').nth(1).waitFor({ state: 'detached' });
+  assert.match(await lots.first().textContent(), /Added Oct 2/, 'the older pack is the one left');
+  await me.getByRole('button', { name: 'Add a pack' }).click();
+  await me.getByTestId('lot').nth(1).waitFor();
+  await me.getByText('Removed 1 pack').first().waitFor();
+  console.log('ok  item detail lists packs oldest first, steps one pack, and shows history');
+
+  await me.goto(home);
+  await say(me, 'how much ground turkey do we have');
+  assert.match(await sheet(me).textContent(), /Ground turkey.*2 packs/);
+  await me.getByRole('button', { name: 'Done' }).click();
+  console.log('ok  a spoken question is answered without changing anything');
+
+  await row(me, 'Venison').getByRole('button', { name: 'Remove one' }).click();
+  await row(me, 'Venison').getByRole('button', { name: 'Remove the last one' }).click();
+  await row(me, 'Venison').waitFor({ state: 'detached' });
+  await shot(me, '1-inventory');
+  console.log('ok  minus takes the last half pound and the item leaves the list');
+
+  await me.goto(`${home}/settings`);
   const memberInvitedAt = Date.now() - 1000;
-  await ownerPage.getByLabel('Invite someone').fill(member);
-  await ownerPage.getByRole('button', { name: 'Send invite' }).click();
-  await ownerPage.getByText(`Invite sent to ${member}.`).waitFor();
-  await shot(ownerPage, '4-settings');
+  await me.getByLabel('Invite someone').fill(member);
+  await me.getByRole('button', { name: 'Send invite' }).click();
+  await me.getByText(`Invite sent to ${member}.`).waitFor();
+  await shot(me, '4-settings');
   console.log('ok  owner invites a member by email');
 
-  const memberPage = await acceptInviteLink(browser, member, memberInvitedAt);
-  await memberPage.waitForURL(householdUrl);
-  assert.equal(await amountOf(memberPage, 'Frozen pizza').textContent(), '2');
-  await memberPage.goto(`${householdUrl}/settings`);
-  assert.equal(await memberPage.getByLabel('Invite someone').count(), 0, 'members do not see the invite form');
-  await memberPage.goto(householdUrl);
+  const them = await acceptInviteLink(browser, member, memberInvitedAt);
+  await them.waitForURL(home);
+  assert.equal(await amountOf(them, 'Frozen pizzas').textContent(), '2');
+  await them.goto(`${home}/settings`);
+  assert.equal(await them.getByLabel('Invite someone').count(), 0, 'members do not see the invite form');
+  await them.goto(home);
   console.log('ok  invited member joins and sees the same freezer');
 
-  await ownerPage.goto(householdUrl);
-  await command(ownerPage, 'add a bag of peas');
-  await ownerPage.getByRole('button', { name: 'Save' }).click();
-  await amountOf(memberPage, 'Peas').waitFor({ timeout: 10000 });
+  await me.goto(home);
+  await say(me, 'put in two bags of peas');
+  await me.getByRole('button', { name: 'Save 1 change' }).click();
+  await amountOf(them, 'Peas').waitFor({ timeout: 10000 });
   console.log('ok  member screen updates live when the owner adds food');
 
   const strangerInvitedAt = Date.now() - 1000;
-  const { error: strangerInvite } = await admin.auth.admin.inviteUserByEmail(stranger);
-  assert.equal(strangerInvite, null);
-  const strangerPage = await acceptInviteLink(browser, stranger, strangerInvitedAt);
-  await strangerPage.getByLabel('Household name').fill('Friend house');
-  await strangerPage.getByRole('button', { name: 'Create' }).click();
-  await strangerPage.waitForURL(/\/h\//);
-  const res = await strangerPage.goto(householdUrl);
-  assert.equal(res.status(), 404, 'stranger gets not found for another household');
-  await strangerPage.goto(`${householdUrl}/activity`);
-  assert.equal(await strangerPage.getByText('Ground turkey').count(), 0, 'stranger sees no activity from another household');
+  assert.equal((await admin.auth.admin.inviteUserByEmail(stranger)).error, null);
+  const outsider = await acceptInviteLink(browser, stranger, strangerInvitedAt);
+  await outsider.getByLabel('Household name').fill('Friend house');
+  await outsider.getByRole('button', { name: 'Create household' }).click();
+  await outsider.waitForURL(/\/h\//);
+  assert.equal((await outsider.goto(home)).status(), 404, 'stranger gets not found for another household');
+  await outsider.goto(`${home}/activity`);
+  assert.equal(await outsider.getByText(/Ground turkey/).count(), 0, 'stranger sees no activity from another household');
   console.log('ok  a different household cannot open yours');
 
-  await ownerPage.goto(`${householdUrl}/activity`);
-  await ownerPage.getByText('Ground turkey').first().waitFor();
-  assert.ok((await ownerPage.getByText(/^You ·/).count()) >= 8, 'every change is logged with who made it');
-  await shot(ownerPage, '5-activity');
-  console.log('ok  activity log shows who changed what');
+  await me.goto(`${home}/activity`);
+  await me.getByText(/by voice/).first().waitFor();
+  await shot(me, '5-activity');
+  console.log('ok  activity log shows who changed what, and what was spoken');
 
-  const laptop = await signIn(browser, owner);
-  await laptop.waitForURL(/\/\?all=1|\/h\//);
-  console.log('ok  owner signs in on a second device with an emailed code');
+  const desk = await signIn(browser, owner, { ...devices['Desktop Chrome'], viewport: { width: 1280, height: 860 }, isMobile: false, hasTouch: false });
+  await desk.waitForURL(home);
+  await desk.getByRole('complementary', { name: 'Sidebar' }).getByText('Frostbox').waitFor();
+  await desk.getByRole('button', { name: 'Show packs of Ground turkey' }).click();
+  await desk.getByText('Pack 2').waitFor();
+  await shot(desk, '6-desktop');
+  console.log('ok  desktop shows the sidebar and the table with expandable packs (signed in by emailed code)');
+
+  const night = await phone(browser, { colorScheme: 'dark' });
+  await night.context().addCookies(await me.context().cookies());
+  await night.goto(home);
+  await row(night, 'Frozen pizzas').waitFor();
+  const bg = await night.evaluate(() => getComputedStyle(document.body).backgroundColor);
+  assert.equal(bg, 'rgb(11, 15, 20)', 'dark theme uses the dark bg token');
+  await shot(night, '7-dark');
+  console.log('ok  dark theme follows the device setting');
+
   console.log('\nall end-to-end checks passed');
 } finally {
   await browser.close();

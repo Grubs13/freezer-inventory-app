@@ -1,6 +1,8 @@
-import type { Category, Draft, InventoryItem, Unit } from './domain';
+import { total, type Category, type Draft, type InventoryItem, type Unit } from './domain';
 
-export type ParseResult = { drafts: Draft[]; unparsed: string[] };
+/** A spoken question such as "how much chicken do we have". Answered, never saved. */
+export type Question = { heard: string; itemIds: string[] };
+export type ParseResult = { drafts: Draft[]; unparsed: string[]; question: Question | null };
 
 type Intent = 'add' | 'remove';
 
@@ -43,10 +45,22 @@ const CATEGORY_KEYWORDS: [Category, string[]][] = [
 ];
 
 const LOCATION = /\b(?:in|into|to|from|out of|outta|inside)\s+(?:the\s+|our\s+|my\s+)?(?:deep\s+|chest\s+|garage\s+|big\s+|basement\s+)?(?:freezer|freeze|deep freeze)\b/g;
+const MONTHS = ['jan', 'feb', 'mar', 'apr', 'may', 'jun', 'jul', 'aug', 'sep', 'oct', 'nov', 'dec'];
+const FROM_MONTH = /\s+(?:from|added in|added|in)\s+(january|february|march|april|may|june|july|august|september|october|november|december|jan|feb|mar|apr|jun|jul|aug|sept|sep|oct|nov|dec)(?:\s+(\d{1,2})(?:st|nd|rd|th)?)?$/;
+const QUESTION = /^(?:how much|how many|do we have(?: any)?|do i have(?: any)?|is there(?: any)?|are there(?: any)?|have we got(?: any)?|any)\s+(.+?)(?:\s+(?:left|do we have|do i have|have we got|in there|is there|are there|in the freezer))*$/;
 const KNOWN_AND_NAMES = ['mac and cheese', 'macaroni and cheese', 'chips and dip', 'rice and beans', 'beef and broccoli', 'surf and turf', 'franks and beans'];
 
 export function parseCommand(text: string, inventory: InventoryItem[], today: string): ParseResult {
   const protectedNames = [...KNOWN_AND_NAMES, ...inventory.map((i) => normalize(i.name)).filter((n) => n.includes(' and '))];
+  const asked = normalize(text).replace(/\?/g, '').replace(LOCATION, ' ').trim().match(QUESTION);
+  if (asked) {
+    const heard = asked[1].replace(/^(?:of\s+)?(?:the\s+|some\s+)?/, '');
+    const itemIds = rank(heard, inventory.filter((i) => total(i) > 0), null)
+      .filter((r) => r.score >= 0.45)
+      .slice(0, 3)
+      .map((r) => r.item.id);
+    return { drafts: [], unparsed: [], question: { heard, itemIds } };
+  }
   let body = normalize(text).replace(LOCATION, ' ');
   for (const n of protectedNames) body = body.split(n).join(n.replace(/ and /g, ' & '));
   body = body.replace(/ and (a )?half\b/g, ' & $1half');
@@ -69,10 +83,11 @@ export function parseCommand(text: string, inventory: InventoryItem[], today: st
     }
     drafts.push(intent === 'add' ? toAdd(step, inventory, today) : toRemove(step, inventory));
   }
-  return { drafts, unparsed };
+  return { drafts, unparsed, question: null };
 }
 
-type Clause = { intent: Intent | null; quantity: number | 'all' | null; unit: Unit | null; name: string };
+type When = { month: number; day: number | null };
+type Clause = { intent: Intent | null; quantity: number | 'all' | null; unit: Unit | null; name: string; when: When | null };
 
 function readClause(raw: string): Clause {
   let s = raw;
@@ -114,7 +129,13 @@ function readClause(raw: string): Clause {
     s = s.slice(first.length).trim();
   }
   s = s.replace(/^(?:of\s+)?(?:the\s+|some\s+|our\s+|my\s+)?/, '').replace(/\s+(?:please|too|as well)$/, '').trim();
-  return { intent, quantity, unit, name: s };
+  let when: When | null = null;
+  const from = s.match(FROM_MONTH);
+  if (from) {
+    when = { month: MONTHS.indexOf(from[1].slice(0, 3)) + 1, day: from[2] ? Number(from[2]) : null };
+    s = s.slice(0, from.index).trim();
+  }
+  return { intent, quantity, unit, name: s, when };
 }
 
 function readQuantity(s: string): { value: number; length: number } | null {
@@ -144,15 +165,25 @@ function toAdd(c: Clause, inventory: InventoryItem[], today: string): Draft {
 }
 
 function toRemove(c: Clause, inventory: InventoryItem[]): Draft {
-  const inStock = inventory.filter((i) => i.quantity > 0);
-  const ranked = rank(c.name, inStock, c.unit);
-  const best = ranked[0];
-  if (!best || best.score < 0.45) {
-    return { kind: 'remove', heard: c.name, itemId: null, quantity: typeof c.quantity === 'number' ? c.quantity : 1, ambiguous: true };
-  }
-  const ambiguous = ranked.length > 1 && ranked[1].score >= best.score - 0.05;
-  const quantity = c.quantity === 'all' ? best.item.quantity : Math.min(c.quantity ?? 1, best.item.quantity);
-  return { kind: 'remove', heard: c.name, itemId: best.item.id, quantity, ambiguous };
+  const quantity = typeof c.quantity === 'number' ? c.quantity : 1;
+  const ranked = rank(c.name, inventory.filter((i) => total(i) > 0), c.unit).filter((r) => r.score >= 0.45);
+  const lotFor = (item: InventoryItem) =>
+    c.when ? item.lots.find((l) => Number(l.frozenOn.slice(5, 7)) === c.when!.month && (!c.when!.day || Number(l.frozenOn.slice(8, 10)) === c.when!.day)) ?? null : null;
+  const fits = c.when ? ranked.filter((r) => lotFor(r.item)) : ranked;
+  const best = (fits.length ? fits : ranked)[0];
+  if (!best) return { kind: 'remove', heard: c.name, itemId: null, lotId: null, quantity, choices: [] };
+
+  const close = (fits.length ? fits : ranked).filter((r) => r.score >= best.score - 0.05);
+  const lot = lotFor(best.item);
+  const have = lot ? lot.quantity : total(best.item);
+  return {
+    kind: 'remove',
+    heard: c.name,
+    itemId: best.item.id,
+    lotId: lot?.id ?? null,
+    quantity: c.quantity === 'all' ? have : Math.min(quantity, have),
+    choices: close.length > 1 ? close.slice(0, 4).map((r) => r.item.id) : [],
+  };
 }
 
 function bestMatch(name: string, items: InventoryItem[], unit: Unit | null) {

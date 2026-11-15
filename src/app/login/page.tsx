@@ -2,6 +2,7 @@
 
 import { useRouter, useSearchParams } from 'next/navigation';
 import { Suspense, useState } from 'react';
+import { Button, Mark } from '@/components/frostbox/ui';
 import { supabaseBrowser } from '@/lib/supabase/client';
 
 export default function LoginPage() {
@@ -56,27 +57,30 @@ function Login() {
   }
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-sm flex-col justify-center gap-6 px-6">
-      <div>
-        <p className="text-4xl">🧊</p>
-        <h1 className="mt-2 text-2xl font-semibold">Freezer</h1>
-        <p className="text-muted mt-1">Sign in with the email you were invited with.</p>
+    <main className="auth">
+      <div className="auth__brand"><Mark size={20} />Frostbox</div>
+      <div className="stack">
+        <h1 className="t-title">Sign in</h1>
+        <p className="muted">Use the email address you were invited with.</p>
       </div>
       {step === 'email' ? (
-        <form onSubmit={sendCode} className="flex flex-col gap-3">
-          <label className="text-sm font-medium" htmlFor="email">Email</label>
-          <input id="email" type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} className="field" />
-          <button disabled={busy} className="btn-primary">{busy ? 'Sending…' : 'Email me a code'}</button>
+        <form onSubmit={sendCode} className="stack">
+          <label className="field"><span>Email</span>
+            <input id="email" type="email" required autoComplete="email" value={email} onChange={(e) => setEmail(e.target.value)} className="input" />
+          </label>
+          <Button type="submit" variant="primary" size="lg" block disabled={busy}>{busy ? 'Sending…' : 'Email me a code'}</Button>
         </form>
       ) : (
-        <form onSubmit={verify} className="flex flex-col gap-3">
-          <label className="text-sm font-medium" htmlFor="code">Code sent to {email}</label>
-          <input id="code" inputMode="numeric" autoComplete="one-time-code" required value={code} onChange={(e) => setCode(e.target.value)} className="field text-center text-2xl tracking-[0.4em]" />
-          <button disabled={busy} className="btn-primary">{busy ? 'Checking…' : 'Sign in'}</button>
-          <button type="button" onClick={() => setStep('email')} className="text-muted text-sm underline">Use a different email</button>
+        <form onSubmit={verify} className="stack">
+          <label className="field"><span>Code sent to {email}</span>
+            <input id="code" inputMode="numeric" autoComplete="one-time-code" required value={code} onChange={(e) => setCode(e.target.value)}
+              className="input num" style={{ textAlign: 'center', fontSize: 24, letterSpacing: '0.4em' }} />
+          </label>
+          <Button type="submit" variant="primary" size="lg" block disabled={busy}>{busy ? 'Checking…' : 'Sign in'}</Button>
+          <Button variant="ghost" onClick={() => setStep('email')}>Use a different email</Button>
         </form>
       )}
-      {error && <p role="alert" className="text-danger text-sm">{error}</p>}
+      {error && <p role="alert" className="notice notice--error">{error}</p>}
     </main>
   );
 }

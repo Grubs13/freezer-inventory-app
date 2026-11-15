@@ -1,5 +1,5 @@
-import Link from 'next/link';
-import { formatAmount, type Unit } from '@/lib/domain';
+import { Icon } from '@/components/frostbox/ui';
+import { formatNumber, unitWord, type Unit } from '@/lib/domain';
 import { requireUser } from '@/lib/supabase/server';
 
 type Row = { id: number; delta: number; source: string; user_id: string; created_at: string; items: { name: string; unit: Unit } | null };
@@ -20,29 +20,35 @@ export default async function ActivityPage({ params }: { params: Promise<{ house
   const who = new Map(members?.map((m) => [m.user_id, m.user_id === user.id ? 'You' : m.email.split('@')[0]]));
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-xl flex-col gap-4 px-4 py-6">
-      <Link href={`/h/${householdId}`} className="font-medium text-accent">‹ Back</Link>
-      <h1 className="text-2xl font-semibold">Activity</h1>
-      {!rows?.length && <p className="text-muted">Nothing yet.</p>}
-      <ul className="card divide-y divide-line">
-        {rows?.map((r) => {
-          const n = Number(r.delta);
-          return (
-            <li key={r.id} className="flex items-baseline gap-3 px-4 py-3">
-              <span className={`w-6 shrink-0 text-center font-bold ${n > 0 ? 'text-ok' : 'text-danger'}`}>{n > 0 ? '+' : '−'}</span>
-              <div className="min-w-0 flex-1">
-                <p className="truncate">
-                  {formatAmount(Math.abs(n), r.items?.unit ?? 'item')} {r.items?.name ?? 'Deleted item'}
-                </p>
-                <p className="text-muted text-sm">
-                  {who.get(r.user_id) ?? 'Former member'} · {new Date(r.created_at).toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })}
-                  {r.source === 'voice' ? ' · by voice' : ''}
-                </p>
-              </div>
-            </li>
-          );
-        })}
-      </ul>
-    </main>
+    <>
+      <header className="screenhead">
+        <div>
+          <div className="t-overline muted">Everyone in the household</div>
+          <h1 className="t-title screenhead__title">Activity</h1>
+        </div>
+      </header>
+      {!rows?.length ? (
+        <div className="empty"><p className="muted">Nothing yet. Changes show up here as people add and take out food.</p></div>
+      ) : (
+        <ul className="fb-history" style={{ maxWidth: 720 }}>
+          {rows.map((r) => {
+            const n = Number(r.delta);
+            const word = r.items ? unitWord(Math.abs(n), r.items.unit) : '';
+            return (
+              <li key={r.id}>
+                <Icon name={n > 0 ? 'plus' : 'minus'} size={16} />
+                <div>
+                  {n > 0 ? 'Added' : 'Removed'} {formatNumber(Math.abs(n))}{word ? ` ${word}` : ''} · {r.items?.name ?? 'Deleted item'}
+                  <time dateTime={r.created_at}>
+                    {who.get(r.user_id) ?? 'Former member'} · {new Date(r.created_at).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })}
+                    {r.source === 'voice' ? ' · by voice' : ''}
+                  </time>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </>
   );
 }

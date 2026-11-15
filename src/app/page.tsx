@@ -1,6 +1,7 @@
 import Link from 'next/link';
 import { redirect } from 'next/navigation';
 import { createHousehold, signOut } from './actions';
+import { Icon, Mark } from '@/components/frostbox/ui';
 import { requireUser } from '@/lib/supabase/server';
 
 export default async function Home({ searchParams }: { searchParams: Promise<{ all?: string; error?: string }> }) {
@@ -12,38 +13,37 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ a
   if (list.length === 1 && !all) redirect(`/h/${list[0].id}`);
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-md flex-col gap-6 px-4 py-8">
-      <header className="flex items-center justify-between">
-        <h1 className="text-2xl font-semibold">Your households</h1>
-        <form action={signOut}>
-          <button className="text-muted text-sm underline">Sign out</button>
-        </form>
+    <main className="page stack" style={{ gap: 'var(--space-6)' }}>
+      <header className="screenhead" style={{ paddingBottom: 0 }}>
+        <div className="auth__brand"><Mark size={20} />Frostbox</div>
+        <form action={signOut}><button className="fb-btn fb-btn--ghost fb-btn--sm">Sign out</button></form>
       </header>
-      <p className="text-muted -mt-4 text-sm">Signed in as {user.email}</p>
+      <div>
+        <h1 className="t-title">Households</h1>
+        <p className="muted t-label" style={{ fontWeight: 400 }}>Signed in as {user.email}</p>
+      </div>
 
       {list.length > 0 && (
-        <ul className="card divide-y divide-line">
+        <nav className="fb-list" aria-label="Your households">
           {list.map((h) => (
-            <li key={h.id}>
-              <Link href={`/h/${h.id}`} className="flex items-center justify-between px-4 py-4 text-lg font-medium">
-                {h.name} <span aria-hidden className="text-muted">›</span>
-              </Link>
-            </li>
+            <Link key={h.id} href={`/h/${h.id}`} className="linkrow">
+              {h.name}<Icon name="chevronRight" size={16} />
+            </Link>
           ))}
-        </ul>
+        </nav>
       )}
 
-      <form action={createHousehold} className="card flex flex-col gap-3 p-4">
-        <h2 className="font-semibold">{list.length ? 'Create another household' : 'Create your household'}</h2>
-        {list.length === 0 && (
-          <p className="text-muted text-sm">You will be its owner, and you can invite others from its settings.</p>
-        )}
-        <label className="text-sm font-medium" htmlFor="name">Household name</label>
-        <input id="name" name="name" required maxLength={80} placeholder="Home" className="field" />
-        <label className="text-sm font-medium" htmlFor="freezer">First freezer</label>
-        <input id="freezer" name="freezer" maxLength={60} placeholder="Deep freeze" className="field" />
-        <button className="btn-primary">Create</button>
-        {error && <p role="alert" className="text-danger text-sm">{error}</p>}
+      <form action={createHousehold} className="card stack">
+        <h2 className="t-heading">{list.length ? 'Create another household' : 'Create your household'}</h2>
+        {list.length === 0 && <p className="muted">You’ll be its owner and can invite people from Settings.</p>}
+        <label className="field"><span>Household name</span>
+          <input name="name" required maxLength={80} placeholder="Home" className="input" />
+        </label>
+        <label className="field"><span>First freezer</span>
+          <input name="freezer" maxLength={60} placeholder="Deep freeze" className="input" />
+        </label>
+        <button className="fb-btn fb-btn--primary fb-btn--lg fb-btn--block">Create household</button>
+        {error && <p role="alert" className="notice notice--error">{error}</p>}
       </form>
     </main>
   );

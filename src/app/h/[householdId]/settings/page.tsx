@@ -1,11 +1,14 @@
-import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import {
   addFreezer, cancelInvite, deleteFreezer, deleteHousehold, inviteMember, removeMember, renameFreezer, renameHousehold, setRole, signOut,
 } from '@/app/actions';
+import { ThemeSwitch } from '@/components/frostbox/ThemeSwitch';
 import { requireUser } from '@/lib/supabase/server';
 
 type Params = { params: Promise<{ householdId: string }>; searchParams: Promise<{ error?: string; notice?: string }> };
+
+const btn = (variant: 'primary' | 'secondary' | 'danger' | 'ghost', size: 'sm' | 'md' | 'lg' = 'md', block = false) =>
+  `fb-btn fb-btn--${variant} fb-btn--${size}${block ? ' fb-btn--block' : ''}`;
 
 export default async function SettingsPage({ params, searchParams }: Params) {
   const { householdId } = await params;
@@ -22,141 +25,144 @@ export default async function SettingsPage({ params, searchParams }: Params) {
   const hidden = <input type="hidden" name="householdId" value={householdId} />;
 
   return (
-    <main className="mx-auto flex min-h-dvh max-w-xl flex-col gap-6 px-4 py-6">
-      <header className="flex items-center justify-between">
-        <Link href={`/h/${householdId}`} className="font-medium text-accent">‹ Back</Link>
-        <form action={signOut}><button className="text-muted text-sm underline">Sign out</button></form>
+    <div className="stack" style={{ gap: 'var(--space-6)', maxWidth: 640 }}>
+      <header className="screenhead" style={{ paddingBottom: 0 }}>
+        <div>
+          <div className="t-overline muted">{household.name}</div>
+          <h1 className="t-title screenhead__title">Settings</h1>
+        </div>
+        <form action={signOut}><button className={btn('ghost', 'sm')}>Sign out</button></form>
       </header>
-      <h1 className="text-2xl font-semibold">{household.name}</h1>
-      {(error || notice) && (
-        <p role={error ? 'alert' : 'status'} className={`card p-3 text-sm ${error ? 'text-danger' : 'text-ok'}`}>{error || notice}</p>
-      )}
+      {(error || notice) && <p role={error ? 'alert' : 'status'} className={`notice ${error ? 'notice--error' : 'notice--ok'}`}>{error || notice}</p>}
+
+      <Section title="Appearance">
+        <div className="card row" style={{ justifyContent: 'space-between', flexWrap: 'wrap' }}>
+          <span>Theme</span>
+          <ThemeSwitch />
+        </div>
+      </Section>
 
       {isOwner && (
         <Section title="Household">
-          <form action={renameHousehold} className="flex gap-2">
+          <form action={renameHousehold} className="card row">
             {hidden}
-            <input name="name" defaultValue={household.name} required maxLength={80} aria-label="Household name" className="field" />
-            <button className="btn">Rename</button>
+            <input name="name" defaultValue={household.name} required maxLength={80} aria-label="Household name" className="input" />
+            <button className={btn('secondary', 'lg')}>Rename</button>
           </form>
         </Section>
       )}
 
       <Section title="Freezers">
-        <ul className="flex flex-col gap-2">
+        <div className="card stack">
           {freezers?.map((f) =>
             isOwner ? (
-              <li key={f.id} className="flex gap-2">
-                <form action={renameFreezer} className="flex flex-1 gap-2">
+              <div key={f.id} className="row">
+                <form action={renameFreezer} className="row" style={{ flex: 1 }}>
                   {hidden}
                   <input type="hidden" name="freezerId" value={f.id} />
-                  <input name="name" defaultValue={f.name} required maxLength={60} aria-label="Freezer name" className="field" />
-                  <button className="btn">Save</button>
+                  <input name="name" defaultValue={f.name} required maxLength={60} aria-label={`Name of ${f.name}`} className="input" />
+                  <button className={btn('secondary', 'lg')}>Save</button>
                 </form>
                 {(freezers?.length ?? 0) > 1 && (
-                  <details className="relative">
-                    <summary className="btn-danger cursor-pointer list-none">Delete</summary>
-                    <form action={deleteFreezer} className="card absolute right-0 z-10 mt-2 w-60 p-3 text-sm">
+                  <details>
+                    <summary className={btn('danger', 'lg')}>Delete</summary>
+                    <form action={deleteFreezer} className="card stack" style={{ position: 'absolute', right: 16, zIndex: 5, width: 260, boxShadow: 'var(--shadow-md)' }}>
                       {hidden}
                       <input type="hidden" name="freezerId" value={f.id} />
                       <p>Delete {f.name} and everything in it?</p>
-                      <button className="btn-danger mt-2 w-full">Yes, delete</button>
+                      <button className={btn('danger', 'md', true)}>Delete freezer</button>
                     </form>
                   </details>
                 )}
-              </li>
+              </div>
             ) : (
-              <li key={f.id} className="card px-3 py-2">{f.name}</li>
+              <div key={f.id}>{f.name}</div>
             ),
           )}
-        </ul>
-        {isOwner && (
-          <form action={addFreezer} className="mt-3 flex gap-2">
-            {hidden}
-            <input name="name" required maxLength={60} placeholder="Garage freezer" aria-label="New freezer name" className="field" />
-            <button className="btn">Add</button>
-          </form>
-        )}
+          {isOwner && (
+            <form action={addFreezer} className="row">
+              {hidden}
+              <input name="name" required maxLength={60} placeholder="Garage freezer" aria-label="New freezer name" className="input" />
+              <button className={btn('secondary', 'lg')}>Add freezer</button>
+            </form>
+          )}
+        </div>
       </Section>
 
       <Section title="People">
-        <ul className="card divide-y divide-line">
+        <ul className="people fb-list">
           {members?.map((m) => (
-            <li key={m.user_id} className="flex flex-wrap items-center gap-2 px-3 py-3">
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-medium">{m.email}{m.user_id === user.id ? ' (you)' : ''}</p>
-                <p className="text-muted text-sm capitalize">{m.role}</p>
-              </div>
+            <li key={m.user_id}>
+              <div className="people__who"><b>{m.email}{m.user_id === user.id ? ' (you)' : ''}</b><span>{m.role === 'owner' ? 'Owner' : 'Member'}</span></div>
               {isOwner && m.user_id !== user.id && (
                 <>
                   <form action={setRole}>
                     {hidden}
                     <input type="hidden" name="userId" value={m.user_id} />
                     <input type="hidden" name="role" value={m.role === 'owner' ? 'member' : 'owner'} />
-                    <button className="btn text-sm">{m.role === 'owner' ? 'Make member' : 'Make owner'}</button>
+                    <button className={btn('secondary', 'sm')}>{m.role === 'owner' ? 'Make member' : 'Make owner'}</button>
                   </form>
                   <form action={removeMember}>
                     {hidden}
                     <input type="hidden" name="userId" value={m.user_id} />
-                    <button className="btn-danger text-sm">Remove</button>
+                    <button className={btn('danger', 'sm')}>Remove</button>
                   </form>
                 </>
               )}
             </li>
           ))}
           {invites?.map((inv) => (
-            <li key={inv.id} className="flex items-center gap-2 px-3 py-3">
-              <div className="min-w-0 flex-1">
-                <p className="truncate font-medium">{inv.email}</p>
-                <p className="text-muted text-sm">Invited as {inv.role}, not joined yet</p>
-              </div>
+            <li key={inv.id}>
+              <div className="people__who"><b>{inv.email}</b><span>Invited as {inv.role}, hasn’t joined yet</span></div>
               <form action={cancelInvite}>
                 {hidden}
                 <input type="hidden" name="inviteId" value={inv.id} />
-                <button className="btn text-sm">Cancel</button>
+                <button className={btn('secondary', 'sm')}>Cancel invite</button>
               </form>
             </li>
           ))}
         </ul>
         {isOwner && (
-          <form action={inviteMember} className="mt-3 flex flex-col gap-2">
+          <form action={inviteMember} className="card stack" style={{ marginTop: 'var(--space-3)' }}>
             {hidden}
-            <label htmlFor="invite-email" className="text-sm font-medium">Invite someone</label>
-            <div className="flex gap-2">
-              <input id="invite-email" name="email" type="email" required placeholder="name@example.com" className="field" />
-              <select name="role" aria-label="Role" className="field w-32">
-                <option value="member">Member</option>
-                <option value="owner">Owner</option>
-              </select>
+            <div className="row" style={{ alignItems: 'flex-end' }}>
+              <label className="field"><span>Invite someone</span>
+                <input name="email" type="email" required placeholder="name@example.com" className="input" />
+              </label>
+              <label className="field" style={{ flex: 'none', width: 120 }}><span>Role</span>
+                <select name="role" className="input"><option value="member">Member</option><option value="owner">Owner</option></select>
+              </label>
             </div>
-            <button className="btn-primary">Send invite</button>
-            <p className="text-muted text-xs">Members add and take out food. Owners also manage freezers and people.</p>
+            <button className={btn('primary', 'lg', true)}>Send invite</button>
+            <p className="muted t-caption">Members add and take out food. Owners also manage freezers and people.</p>
           </form>
         )}
       </Section>
 
-      <Section title="Danger zone">
-        <form action={removeMember}>
-          {hidden}
-          <input type="hidden" name="userId" value={user.id} />
-          <button className="btn-danger w-full">Leave this household</button>
-        </form>
-        {isOwner && (
-          <form action={deleteHousehold} className="mt-3 flex gap-2">
+      <Section title="Leave or delete">
+        <div className="card stack">
+          <form action={removeMember}>
             {hidden}
-            <input name="confirm" placeholder="Type DELETE" aria-label="Type DELETE to confirm" className="field" />
-            <button className="btn-danger shrink-0">Delete household</button>
+            <input type="hidden" name="userId" value={user.id} />
+            <button className={btn('danger', 'lg', true)}>Leave this household</button>
           </form>
-        )}
+          {isOwner && (
+            <form action={deleteHousehold} className="row">
+              {hidden}
+              <input name="confirm" placeholder="Type DELETE" aria-label="Type DELETE to confirm" className="input" />
+              <button className={btn('danger', 'lg')}>Delete household</button>
+            </form>
+          )}
+        </div>
       </Section>
-    </main>
+    </div>
   );
 }
 
 function Section({ title, children }: { title: string; children: React.ReactNode }) {
   return (
     <section>
-      <h2 className="text-muted mb-2 text-xs font-semibold tracking-wider uppercase">{title}</h2>
+      <h2 className="t-overline muted" style={{ marginBottom: 'var(--space-2)' }}>{title}</h2>
       {children}
     </section>
   );

@@ -1,6 +1,6 @@
 begin;
 create extension if not exists pgtap with schema extensions;
-select plan(28);
+select plan(34);
 
 insert into auth.users (id, email) values
   ('00000000-0000-0000-0000-00000000000a', 'owner@test.dev'),
@@ -39,22 +39,44 @@ select lives_ok($$
     '[{"kind":"add","name":"  ground   TURKEY ","category":"poultry","unit":"pack","quantity":3,"frozen_on":"2026-03-01"}]')
 $$, 'adding the same food again with different spacing and case');
 select is((select count(*)::int from public.items where name_key = 'ground turkey'), 1, 'same name and unit reuses one item');
-select is((select quantity from public.inventory where name = 'Ground turkey'), 5.00::numeric, 'inventory sums every batch');
-select is((select oldest_frozen_on from public.inventory where name = 'Ground turkey'), '2026-01-01'::date, 'inventory shows the oldest date frozen');
-
+select is((select sum(quantity) from public.lots l join public.items i on i.id = l.item_id where i.name = 'Ground turkey'), 5.00::numeric, 'packs on different days stay separate and add up');
 select lives_ok($$
   select public.apply_actions((select id from ctx where key = 'home_freezer'),
-    (select jsonb_build_array(jsonb_build_object('kind','remove','item_id',id,'quantity',3)) from public.items where name = 'Ground turkey'), 'voice')
-$$, 'member can remove food');
+    '[{"kind":"add","name":"Ground turkey","category":"poultry","unit":"pack","quantity":1,"frozen_on":"2026-03-01"}]')
+$$, 'adding on a day that already has a pack');
+select is((select count(*)::int from public.lots l join public.items i on i.id = l.item_id where i.name = 'Ground turkey'), 2, 'same-day adds go into that day''s pack');
+select lives_ok($$
+  select public.apply_actions((select id from ctx where key = 'home_freezer'),
+    (select jsonb_build_array(jsonb_build_object('kind','remove','item_id',i.id,'lot_id',l.id,'quantity',1))
+     from public.lots l join public.items i on i.id = l.item_id where i.name = 'Ground turkey' and l.frozen_on = '2026-03-01'))
+$$, 'member can take from one specific pack');
+select results_eq(
+  $$ select quantity, frozen_on from public.lots l join public.items i on i.id = l.item_id where i.name = 'Ground turkey' order by frozen_on $$,
+  $$ values (2.00::numeric(10,2), '2026-01-01'::date), (3.00::numeric(10,2), '2026-03-01'::date) $$,
+  'a targeted removal leaves the other packs alone');
+
+create temp table undo_actions as
+  select public.apply_actions((select id from ctx where key = 'home_freezer'),
+    (select jsonb_build_array(jsonb_build_object('kind','remove','item_id',id,'quantity',3)) from public.items where name = 'Ground turkey'), 'voice') as actions;
 select results_eq(
   $$ select quantity, frozen_on from public.lots l join public.items i on i.id = l.item_id where i.name = 'Ground turkey' $$,
   $$ values (2.00::numeric(10,2), '2026-03-01'::date) $$,
-  'removal takes the oldest batch first');
+  'removal takes the oldest pack first');
+select is((select jsonb_array_length(actions) from undo_actions), 2, 'undo lists one restore per pack touched');
+select lives_ok($$ select public.apply_actions((select id from ctx where key = 'home_freezer'), (select actions from undo_actions)) $$, 'undo can be applied');
+select results_eq(
+  $$ select quantity, frozen_on from public.lots l join public.items i on i.id = l.item_id where i.name = 'Ground turkey' order by frozen_on $$,
+  $$ values (2.00::numeric(10,2), '2026-01-01'::date), (3.00::numeric(10,2), '2026-03-01'::date) $$,
+  'undo puts food back into the packs it came from');
+select lives_ok($$
+  select public.apply_actions((select id from ctx where key = 'home_freezer'),
+    (select jsonb_build_array(jsonb_build_object('kind','remove','item_id',id,'quantity',3)) from public.items where name = 'Ground turkey'))
+$$, 'remove again after undo');
 select throws_ok($$
   select public.apply_actions((select id from ctx where key = 'home_freezer'),
     (select jsonb_build_array(jsonb_build_object('kind','remove','item_id',id,'quantity',5)) from public.items where name = 'Ground turkey'))
 $$, 'P0001', 'Only 2.00 left of that item', 'cannot remove more than is in the freezer');
-select is((select count(*)::int from public.movements), 4, 'each add and remove is logged');
+select is((select count(*)::int from public.movements), 9, 'each add, remove and undo is logged');
 
 select throws_ok($$ insert into public.freezers (household_id, name) select id, 'Garage' from ctx where key = 'home' $$,
   '42501', null, 'members cannot add freezers');
@@ -66,7 +88,7 @@ select is((select role::text from public.memberships where user_id = auth.uid())
 select pg_temp.act_as('00000000-0000-0000-0000-00000000000c', 'stranger@test.dev');
 select is((select count(*)::int from public.households), 1, 'stranger sees only their own household');
 select is((select count(*)::int from public.freezers where household_id = (select id from ctx where key = 'home')), 0, 'stranger cannot see the other freezers');
-select is((select count(*)::int from public.inventory where household_id = (select id from ctx where key = 'home')), 0, 'stranger cannot see the other inventory');
+select is((select count(*)::int from public.lots where household_id = (select id from ctx where key = 'home')), 0, 'stranger cannot see the other packs');
 select is((select count(*)::int from public.movements), 0, 'stranger cannot see the other activity');
 select is((select count(*)::int from public.memberships where household_id = (select id from ctx where key = 'home')), 0, 'stranger cannot see the other members');
 select throws_ok($$

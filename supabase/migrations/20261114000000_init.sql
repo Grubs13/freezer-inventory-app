@@ -66,10 +66,11 @@ create table public.lots (
   item_id uuid not null,
   quantity numeric(10, 2) not null check (quantity > 0),
   frozen_on date not null,
+  source text not null default 'manual' check (source in ('voice', 'manual', 'photo')),
   created_at timestamptz not null default now(),
+  unique (item_id, frozen_on),
   foreign key (item_id, household_id) references public.items (id, household_id) on delete cascade
 );
-create index lots_item_idx on public.lots (item_id, frozen_on, created_at);
 create index lots_household_idx on public.lots (household_id);
 
 create table public.movements (
@@ -83,20 +84,6 @@ create table public.movements (
   foreign key (item_id, household_id) references public.items (id, household_id) on delete cascade
 );
 create index movements_household_idx on public.movements (household_id, created_at desc);
-
-create view public.inventory with (security_invoker = true) as
-select
-  i.id,
-  i.household_id,
-  i.freezer_id,
-  i.name,
-  i.category,
-  i.unit,
-  coalesce(sum(l.quantity), 0)::numeric(10, 2) as quantity,
-  min(l.frozen_on) as oldest_frozen_on
-from public.items i
-left join public.lots l on l.item_id = i.id
-group by i.id;
 
 -- Membership checks run as definer so policies on memberships can call them without recursing.
 create function public.is_member(h uuid) returns boolean
@@ -210,19 +197,25 @@ end;
 $$;
 
 -- Runs as the caller, so every row it touches still passes the policies above.
--- Each action is {"kind":"add","name","category","unit","quantity","frozen_on"}
--- or {"kind":"remove","item_id","quantity"}. Removals take from the oldest batch first.
+-- Actions:
+--   {"kind":"add", "name","category","unit" | "item_id", "quantity", "frozen_on"?, "lot_id"?}
+--   {"kind":"remove", "item_id", "quantity", "lot_id"?}
+-- An add goes into that day's pack; a remove without lot_id takes from the oldest pack first.
+-- Returns the actions that undo this call, newest first.
 create function public.apply_actions(p_freezer_id uuid, p_actions jsonb, p_source text default 'manual')
-returns void
+returns jsonb
 language plpgsql security invoker set search_path = '' as $$
 declare
   v_household uuid;
   v_action jsonb;
   v_item uuid;
+  v_lot_id uuid;
   v_qty numeric(10, 2);
   v_left numeric(10, 2);
   v_have numeric(10, 2);
+  v_take numeric(10, 2);
   v_lot record;
+  v_undo jsonb := '[]'::jsonb;
 begin
   select f.household_id into v_household from public.freezers f where f.id = p_freezer_id;
   if v_household is null then
@@ -237,56 +230,95 @@ begin
     if v_qty is null or v_qty <= 0 then
       raise exception 'Quantity must be more than zero';
     end if;
+    v_item := null;
 
-    if v_action ->> 'kind' = 'add' then
-      insert into public.items (household_id, freezer_id, name, category, unit)
-      values (
-        v_household, p_freezer_id, btrim(v_action ->> 'name'),
-        coalesce(v_action ->> 'category', 'other'), coalesce(v_action ->> 'unit', 'item')
-      )
-      on conflict (freezer_id, name_key, unit) do update set category = excluded.category
-      returning id into v_item;
-
-      insert into public.lots (household_id, item_id, quantity, frozen_on)
-      values (v_household, v_item, v_qty, coalesce((v_action ->> 'frozen_on')::date, current_date));
-      insert into public.movements (household_id, item_id, delta, source)
-      values (v_household, v_item, v_qty, p_source);
-
-    elsif v_action ->> 'kind' = 'remove' then
+    if v_action ? 'item_id' then
       select i.id into v_item from public.items i
       where i.id = (v_action ->> 'item_id')::uuid and i.freezer_id = p_freezer_id;
       if v_item is null then
         raise exception 'That item is not in this freezer';
       end if;
+    end if;
 
-      select coalesce(sum(l.quantity), 0) into v_have from public.lots l where l.item_id = v_item;
-      if v_have < v_qty then
-        raise exception 'Only % left of that item', v_have;
+    if v_action ->> 'kind' = 'add' then
+      if v_item is null then
+        insert into public.items (household_id, freezer_id, name, category, unit)
+        values (
+          v_household, p_freezer_id, btrim(v_action ->> 'name'),
+          coalesce(v_action ->> 'category', 'other'), coalesce(v_action ->> 'unit', 'item')
+        )
+        on conflict (freezer_id, name_key, unit) do update set category = excluded.category
+        returning id into v_item;
       end if;
 
-      v_left := v_qty;
-      for v_lot in
-        select l.id, l.quantity from public.lots l
-        where l.item_id = v_item
-        order by l.frozen_on, l.created_at
-        for update
-      loop
-        exit when v_left <= 0;
-        if v_lot.quantity <= v_left then
-          delete from public.lots where id = v_lot.id;
-          v_left := v_left - v_lot.quantity;
-        else
-          update public.lots set quantity = quantity - v_left where id = v_lot.id;
-          v_left := 0;
+      if v_action ? 'lot_id' then
+        update public.lots set quantity = quantity + v_qty
+        where id = (v_action ->> 'lot_id')::uuid and item_id = v_item
+        returning id into v_lot_id;
+        if v_lot_id is null then
+          raise exception 'That pack is no longer in the freezer';
         end if;
-      end loop;
+      else
+        insert into public.lots (household_id, item_id, quantity, frozen_on, source)
+        values (v_household, v_item, v_qty, coalesce((v_action ->> 'frozen_on')::date, current_date), p_source)
+        on conflict (item_id, frozen_on) do update set quantity = public.lots.quantity + excluded.quantity
+        returning id into v_lot_id;
+      end if;
 
-      insert into public.movements (household_id, item_id, delta, source)
-      values (v_household, v_item, -v_qty, p_source);
+      insert into public.movements (household_id, item_id, delta, source) values (v_household, v_item, v_qty, p_source);
+      v_undo := jsonb_build_array(jsonb_build_object('kind', 'remove', 'item_id', v_item, 'lot_id', v_lot_id, 'quantity', v_qty)) || v_undo;
+
+    elsif v_action ->> 'kind' = 'remove' then
+      if v_item is null then
+        raise exception 'That item is not in this freezer';
+      end if;
+
+      if v_action ? 'lot_id' then
+        select l.id, l.quantity, l.frozen_on into v_lot from public.lots l
+        where l.id = (v_action ->> 'lot_id')::uuid and l.item_id = v_item
+        for update;
+        if v_lot.id is null then
+          raise exception 'That pack is no longer in the freezer';
+        end if;
+        if v_lot.quantity < v_qty then
+          raise exception 'Only % left in that pack', v_lot.quantity;
+        end if;
+        if v_lot.quantity = v_qty then
+          delete from public.lots where id = v_lot.id;
+        else
+          update public.lots set quantity = quantity - v_qty where id = v_lot.id;
+        end if;
+        v_undo := jsonb_build_array(jsonb_build_object('kind', 'add', 'item_id', v_item, 'quantity', v_qty, 'frozen_on', v_lot.frozen_on)) || v_undo;
+      else
+        select coalesce(sum(l.quantity), 0) into v_have from public.lots l where l.item_id = v_item;
+        if v_have < v_qty then
+          raise exception 'Only % left of that item', v_have;
+        end if;
+        v_left := v_qty;
+        for v_lot in
+          select l.id, l.quantity, l.frozen_on from public.lots l
+          where l.item_id = v_item
+          order by l.frozen_on, l.created_at
+          for update
+        loop
+          exit when v_left <= 0;
+          v_take := least(v_lot.quantity, v_left);
+          if v_take = v_lot.quantity then
+            delete from public.lots where id = v_lot.id;
+          else
+            update public.lots set quantity = quantity - v_take where id = v_lot.id;
+          end if;
+          v_left := v_left - v_take;
+          v_undo := jsonb_build_array(jsonb_build_object('kind', 'add', 'item_id', v_item, 'quantity', v_take, 'frozen_on', v_lot.frozen_on)) || v_undo;
+        end loop;
+      end if;
+
+      insert into public.movements (household_id, item_id, delta, source) values (v_household, v_item, -v_qty, p_source);
     else
       raise exception 'Unknown action %', v_action ->> 'kind';
     end if;
   end loop;
+  return v_undo;
 end;
 $$;
 
