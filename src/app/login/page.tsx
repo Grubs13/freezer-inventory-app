@@ -58,7 +58,7 @@ function Login() {
 
   return (
     <main className="auth">
-      <div className="auth__brand"><Mark size={20} />Frostbox</div>
+      <div className="auth__brand"><Mark size={36} />Frostbox</div>
       <div className="stack">
         <h1 className="t-title">Sign in</h1>
         <p className="muted">Use the email address you were invited with.</p>

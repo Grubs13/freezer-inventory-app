@@ -24,7 +24,7 @@ A shared inventory for a deep freeze. Use it from any phone or computer, and add
 
 The UI follows Frostbox. Its tokens are the only source of color, type, spacing, radius, shadow and size values.
 
-- `design/frostbox/tokens.json` is a copy of the design system's tokens.
+- `design/frostbox/tokens.json` is a copy of the design system's tokens, and `design/frostbox/logos/` holds its logo files. The app icon is the mark.
 - `npm run tokens` turns it into `src/app/tokens.css`: CSS variables for light and dark themes, plus `t-*` text styles. Run it again after the tokens change.
 - `src/app/frostbox.css` holds the component styles, ported from the design system bundle.
 - `src/components/frostbox/` holds the React components: `ui.tsx` (Icon, Button, IconButton, Badge, QuantityStepper, SearchField, CategoryChips, StatCard, VoiceButton), `inventory.tsx` (ItemRow, LotList, InventoryTable, TabBar, Toast) and `VoiceSheet.tsx`.

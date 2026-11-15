@@ -33,7 +33,7 @@ input, select, textarea { font: inherit; color: inherit; }
 .fb-side__freezer { margin-top: auto; display: grid; gap: 4px; padding: var(--space-3); border: 1px solid var(--line); border-radius: var(--radius-md); font-size: 13px; }
 
 /* Logo mark */
-.fb-mark { flex: none; display: grid; place-items: center; width: 28px; height: 28px; border-radius: 8px; background: var(--frost); color: var(--on-frost); }
+.fb-mark { flex: none; display: block; }
 
 /* Screen header */
 .screenhead { display: flex; align-items: center; justify-content: space-between; gap: var(--space-3); padding: var(--space-2) 0 var(--space-4); }
@@ -163,7 +163,6 @@ details > summary::-webkit-details-marker { display: none; }
 /* Auth and households */
 .auth { display: grid; align-content: center; gap: var(--space-6); max-width: 380px; min-height: 100dvh; margin: 0 auto; padding: var(--space-6) var(--space-4); }
 .auth__brand { display: flex; align-items: center; gap: 10px; font-weight: 600; font-size: 17px; }
-.auth__brand .fb-mark { width: 36px; height: 36px; border-radius: 10px; }
 .page { max-width: 560px; margin: 0 auto; padding: max(env(safe-area-inset-top), var(--space-4)) var(--space-4) var(--space-10); }
 .linkrow { display: flex; align-items: center; justify-content: space-between; padding: var(--space-4); color: var(--ink); font-weight: 500; }
 .linkrow + .linkrow { border-top: 1px solid var(--line); }

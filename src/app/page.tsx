@@ -15,7 +15,7 @@ export default async function Home({ searchParams }: { searchParams: Promise<{ a
   return (
     <main className="page stack" style={{ gap: 'var(--space-6)' }}>
       <header className="screenhead" style={{ paddingBottom: 0 }}>
-        <div className="auth__brand"><Mark size={20} />Frostbox</div>
+        <div className="auth__brand"><Mark size={36} />Frostbox</div>
         <form action={signOut}><button className="fb-btn fb-btn--ghost fb-btn--sm">Sign out</button></form>
       </header>
       <div>

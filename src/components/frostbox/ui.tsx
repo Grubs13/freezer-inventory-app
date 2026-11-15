@@ -182,11 +182,15 @@ export function VoiceButton({ state = 'idle', size = 'md', label, onClick }: { s
   );
 }
 
-export function Mark({ size = 16 }: { size?: number }) {
+/** The Frostbox mark from design/frostbox/logos/frostbox-mark.svg. */
+export function Mark({ size = 28 }: { size?: number }) {
   return (
-    <span className="fb-mark" aria-hidden>
-      <Icon name="snowflake" size={size} strokeWidth={2} />
-    </span>
+    <svg className="fb-mark" width={size} height={size} viewBox="0 0 64 64" aria-hidden>
+      <rect width="64" height="64" rx="16" fill="#0b6bcb" />
+      <rect x="12" y="24" width="40" height="28" rx="6" fill="none" stroke="#ffffff" strokeWidth="3.5" />
+      <path d="M12 30h40" stroke="#ffffff" strokeWidth="3.5" />
+      <path d="M32 8v14M25.5 11.5 32 15l6.5-3.5" fill="none" stroke="#bfe0ff" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
   );
 }
 
